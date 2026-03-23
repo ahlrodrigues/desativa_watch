@@ -19,7 +19,6 @@
 # Observação: este script mantém o lote limitado a 2 e-mails para teste controlado.
 
 import sys
-import time
 from datetime import datetime
 
 # === Config / arquivos / dados ===
@@ -58,10 +57,6 @@ from .sgp_contratos import (
 
 # === Logger CSV ===
 from .log_utils import new_exec_id, append_log
-
-# Pequena pausa entre consultas para não sobrecarregar o SGP
-PAUSA_ENTRE_CONSULTAS = 0.4  # segundos
-
 
 def run():
     """
@@ -159,7 +154,7 @@ def run():
                             append_log(
                                 exec_id,
                                 email,
-                                "SEM_RESULTADO",
+                                "FAIL_SEM_RESULTADO",
                                 desativado_em="",
                                 observacao="Sem links de cliente / e-mail no HTML após consulta",
                             )
@@ -182,11 +177,11 @@ def run():
                     desativou = verificar_e_desativar_watch(driver)
                     if desativou:
                         dt_desativ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        print(f"   ✅ WATCH 'Ativo' DESATIVADO em {dt_desativ}")
-                        append_log(exec_id, email, "OK_DESATIVADO", desativado_em=dt_desativ, observacao="")
+                        print(f"   SUCCESS: WATCH desativado em {dt_desativ}")
+                        append_log(exec_id, email, "SUCCESS_OK_DESATIVADO", desativado_em=dt_desativ, observacao=driver.current_url)
                     else:
-                        print("   ➖ Sem contrato WATCH 'Ativo'")
-                        append_log(exec_id, email, "SEM_WATCH_ATIVO", desativado_em="", observacao="")
+                        print("   INFO: sem contrato WATCH ativo")
+                        append_log(exec_id, email, "INFO_SEM_WATCH_ATIVO", desativado_em="", observacao=driver.current_url)
 
                     sucesso = True
                     break  # sucesso na tentativa atual — sai do while
@@ -197,16 +192,14 @@ def run():
 
             except Exception as e:
                 msg = f"{type(e).__name__}: {e}"
-                print(f"   ⚠️ ERRO: {msg}")
-                append_log(exec_id, email, "ERRO", desativado_em="", observacao=msg)
+                print(f"   FAIL: {msg}")
+                append_log(exec_id, email, "FAIL_ERRO", desativado_em="", observacao=msg)
 
             # --- Reabrir do zero entre e-mails (evita estado quebrado) ---
             if FULL_REOPEN_BETWEEN_EMAILS:
                 reabrir_servico_de_tv(driver, mode=SERVICO_TV_REOPEN_MODE)
 
-            time.sleep(PAUSA_ENTRE_CONSULTAS)
-
-        print("\n✅ Lote concluído. Veja o CSV em data/output/ (prefixo: desativa_watch_log_...).")
+        print("\n✅ Lote concluído. Veja o CSV e o resumo em data/output/.")
         input("Pressione ENTER para finalizar...")
 
     finally:
