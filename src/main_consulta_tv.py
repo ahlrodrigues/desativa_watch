@@ -35,6 +35,7 @@ from .files import (
 )
 from .data_ops import sort_df_by_integracao_datetime, top_n_rows
 from .email_utils import extrair_emails
+from .email_lists import filtrar_emails_por_listas
 
 # === Selenium (driver + navegação no SGP) ===
 from .driver import build_driver
@@ -95,6 +96,17 @@ def run():
     print(f"📧 E-mails únicos no TOP 50: {len(emails)}")
     if not emails:
         print("⚠️ Nenhum e-mail encontrado — encerrando.")
+        return
+
+    emails, filtros_stats = filtrar_emails_por_listas(emails)
+    print(
+        "🧹 Filtros de lista:"
+        f" blacklist={filtros_stats['blacklist']}"
+        f" greenlist={filtros_stats['greenlist']}"
+        f" finais={filtros_stats['finais']}/{filtros_stats['originais']}"
+    )
+    if not emails:
+        print("⚠️ Nenhum e-mail restou após aplicar blacklist/greenlist — encerrando.")
         return
 
     # Limita o lote a 2 e-mails para o teste

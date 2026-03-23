@@ -45,6 +45,8 @@ FULL_REOPEN_BETWEEN_EMAILS = _as_bool(os.getenv("FULL_REOPEN_BETWEEN_EMAILS","tr
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OUTPUT_DIR = os.path.join(DATA_DIR, "output")
+BLACKLIST_PATH = os.path.join(BASE_DIR, "blacklist.txt")
+GREENLIST_PATH = os.path.join(BASE_DIR, "greenlist.txt")
 
 if not SGP_BASE_URL:
     raise ValueError("SGP_BASE_URL não definido no .env")

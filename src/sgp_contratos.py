@@ -124,6 +124,10 @@ def abrir_aba_contratos(driver):
 
 def _limpar_campo(driver, locators):
     campo = _wait_any(driver, locators, timeout=20, click=False)
+    valor_atual = (campo.get_attribute("value") or "").strip()
+    estava_preenchido = bool(valor_atual)
+    if not estava_preenchido:
+        return campo, False
     try:
         campo.click()
     except WebDriverException:
@@ -146,12 +150,29 @@ def _limpar_campo(driver, locators):
         )
     except WebDriverException:
         pass
-    return campo
+    return campo, estava_preenchido
 
 
 def limpar_gateway_id_e_smartcard(driver):
-    _limpar_campo(driver, LOC_CAMPO_GATEWAY_ID)
-    _limpar_campo(driver, LOC_CAMPO_SMARTCARD)
+    gateway_campo = _wait_any(driver, LOC_CAMPO_GATEWAY_ID, timeout=20, click=False)
+    smartcard_campo = _wait_any(driver, LOC_CAMPO_SMARTCARD, timeout=20, click=False)
+    gateway_valor = (gateway_campo.get_attribute("value") or "").strip()
+    smartcard_valor = (smartcard_campo.get_attribute("value") or "").strip()
+
+    gateway_preenchido = bool(gateway_valor)
+    smartcard_preenchido = bool(smartcard_valor)
+    if not (gateway_preenchido or smartcard_preenchido):
+        return {
+            "gateway_preenchido": False,
+            "smartcard_preenchido": False,
+            "salvou": False,
+        }
+
+    if gateway_preenchido:
+        _limpar_campo(driver, LOC_CAMPO_GATEWAY_ID)
+    if smartcard_preenchido:
+        _limpar_campo(driver, LOC_CAMPO_SMARTCARD)
+
     btn = _wait_any(driver, LOC_BTN_SALVAR_SERVICO, timeout=20, click=False)
     try:
         btn.click()
@@ -167,6 +188,11 @@ def limpar_gateway_id_e_smartcard(driver):
     smart_vazio = (driver.find_element(*LOC_CAMPO_SMARTCARD[0]).get_attribute("value") or "").strip() == ""
     if not (gateway_vazio and smart_vazio):
         raise TimeoutException("Gateway ID/SmartCard não ficaram vazios após salvar.")
+    return {
+        "gateway_preenchido": gateway_preenchido,
+        "smartcard_preenchido": smartcard_preenchido,
+        "salvou": True,
+    }
 
 def verificar_e_desativar_watch(driver) -> bool:
     painel = None

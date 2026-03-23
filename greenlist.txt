@@ -1,0 +1,7 @@
+# E-mails liberados para processamento.
+# Se este arquivo tiver e-mails, o script só processa os que estiverem aqui.
+# Uma linha por e-mail.
+
+eduaranascimento4@gmail.com
+thiago_carvalho09@outlook.com
+martaribeirobf1@gmail.com
