@@ -77,6 +77,30 @@ def _escolher_melhor_tabela(tabelas: List[pd.DataFrame]) -> pd.DataFrame:
     tabelas_ordenadas = sorted(tabelas, key=score, reverse=True)
     return tabelas_ordenadas[0]
 
+
+def _promover_primeira_linha_para_header(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Alguns .xls-HTML vêm com o cabeçalho na primeira linha de dados.
+    Quando as colunas são numéricas e a primeira linha parece um header textual,
+    promovemos essa linha para nome de coluna.
+    """
+    if df.empty:
+        return df
+
+    cols_sao_numericas = all(isinstance(col, int) for col in df.columns)
+    if not cols_sao_numericas:
+        return df
+
+    primeira_linha = df.iloc[0].tolist()
+    header = [str(v).strip() for v in primeira_linha]
+    header_valido = sum(bool(v) and v.lower() != "nan" for v in header)
+    if header_valido < max(2, len(header) // 2):
+        return df
+
+    novo_df = df.iloc[1:].copy().reset_index(drop=True)
+    novo_df.columns = header
+    return novo_df
+
 def abrir_planilha_export_never(path_arquivo: str) -> pd.DataFrame:
     """
     Abre a planilha e retorna um DataFrame.
@@ -97,7 +121,7 @@ def abrir_planilha_export_never(path_arquivo: str) -> pd.DataFrame:
         # Detecta HTML pelo cabeçalho
         if _eh_html(path_arquivo):
             tabelas = pd.read_html(path_arquivo, flavor="lxml")
-            return _escolher_melhor_tabela(tabelas)
+            return _promover_primeira_linha_para_header(_escolher_melhor_tabela(tabelas))
         # Tenta xlrd (BIFF)
         try:
             return pd.read_excel(path_arquivo, engine="xlrd")
@@ -105,7 +129,7 @@ def abrir_planilha_export_never(path_arquivo: str) -> pd.DataFrame:
             # Fallback extra: se xlrd falhar e for HTML, tenta read_html
             if _eh_html(path_arquivo):
                 tabelas = pd.read_html(path_arquivo, flavor="lxml")
-                return _escolher_melhor_tabela(tabelas)
+                return _promover_primeira_linha_para_header(_escolher_melhor_tabela(tabelas))
             raise e
 
     raise ValueError(f"Extensão não suportada: {ext}")

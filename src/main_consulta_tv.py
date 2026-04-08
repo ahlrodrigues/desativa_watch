@@ -1,41 +1,24 @@
 # /mnt/arquivos/Dropbox/Projetos/desativa_watch/src/main_consulta_tv.py
-# Comentário: Fluxo end-to-end consolidado (teste com 2 e-mails) com:
-#  - abertura e ordenação da planilha (ordenação por INTEGRACAO como datetime aplicada ao DF inteiro)
-#  - recorte TOP 50 e extração de e-mails únicos
+# Comentário: Fluxo end-to-end consolidado usando a greenlist como fila principal:
+#  - lê os e-mails diretamente da greenlist
+#  - aplica apenas blacklist sobre essa fila
 #  - login → Consultar V2 → Serviço de TV
 #  - consulta robusta do e-mail na aba Serviço de TV
-#  - NOVO: aguarda links de cliente na grade, clica a linha correspondente ao e-mail, entra em "Editar"
+#  - clica no cliente da grade → entra em "Editar"
 #  - aba Contratos → se existir WATCH "Ativo": Desativar
-#  - LOG CSV com timestamp da desativação
-#  - reabrir "Serviço de TV" entre e-mails e em caso de retorno em branco (sem resultados)
-#
-# Variáveis relevantes no .env:
-#   SERVICO_TV_REOPEN_MODE=click_path|reload|new_tab
-#   SERVICO_TV_MAX_RETRY_ON_EMPTY=1
-#   FULL_REOPEN_BETWEEN_EMAILS=true
-#   SERVICO_TV_WAIT_SECONDS=3.0
-#   STRICT_INPUT_ASSIGNMENT=true|false
-#
-# Observação: este script mantém o lote limitado a 2 e-mails para teste controlado.
+#  - LOG CSV + resumo texto por execução
+#  - remove da greenlist cada e-mail tratado com sucesso
+#  - reabre "Serviço de TV" entre e-mails e em caso de retorno em branco
 
-import sys
 from datetime import datetime
 
 # === Config / arquivos / dados ===
 from .config import (
-    TARGET_DATE_YYYYMMDD,
     SERVICO_TV_REOPEN_MODE,
     SERVICO_TV_MAX_RETRY_ON_EMPTY,
     FULL_REOPEN_BETWEEN_EMAILS,
 )
-from .files import (
-    resolve_data_para_busca,
-    localizar_arquivo_export_never,
-    abrir_planilha_export_never,
-)
-from .data_ops import sort_df_by_integracao_datetime, top_n_rows
-from .email_utils import extrair_emails
-from .email_lists import filtrar_emails_por_listas
+from .email_lists import load_blacklist, load_greenlist, remove_email_from_greenlist
 
 # === Selenium (driver + navegação no SGP) ===
 from .driver import build_driver
@@ -57,70 +40,48 @@ from .sgp_contratos import (
 )
 
 # === Logger CSV ===
-from .log_utils import new_exec_id, append_log
+from .log_utils import new_exec_id, append_log, summary_path
 
 def run():
     """
     Orquestra o fluxo consolidado com diagnóstico detalhado e o novo caminho pós-consulta:
     clicar no cliente da grade → entrar em "Editar" → aba "Contratos" → desativar WATCH "Ativo".
-    Mantém o lote de teste limitado a 2 e-mails.
+    Usa a greenlist como fila de processamento.
     """
     # ---------------------------
-    # 1) Planilha: resolver data, localizar e abrir
+    # 1) Montar lote a partir da greenlist
     # ---------------------------
-    data_cli = sys.argv[1] if len(sys.argv) > 1 else None
-    date_str = resolve_data_para_busca(TARGET_DATE_YYYYMMDD or data_cli)
-    print(f"🗓️  Data de busca: {date_str}")
+    greenlist = load_greenlist()
+    blacklist = set(load_blacklist())
+    emails = [email for email in greenlist if email not in blacklist]
+    emails_pulados_blacklist = [email for email in greenlist if email in blacklist]
 
-    caminho, _ = localizar_arquivo_export_never(date_str)
-    print(f"📄 Planilha: {caminho}")
-
-    df = abrir_planilha_export_never(caminho)
-    print(f"ℹ️  Linhas totais: {len(df)} | Colunas: {list(df.columns)}")
-
-    # ---------------------------
-    # 2) Ordenar por INTEGRACAO (datetime) e pegar TOP 50
-    # ---------------------------
-    df_sorted, metodo, col_real = sort_df_by_integracao_datetime(
-        df, candidates=("INTEGRACAO", "INTEGRAÇÃO"), ascending=True
-    )
-    print(f"✅ Ordenado por '{col_real}' como datetime (método: {metodo})")
-
-    df_top50 = top_n_rows(df_sorted, n=50)
-    print(f"🔸 Recorte TOP 50 pronto (linhas: {len(df_top50)})")
-
-    # ---------------------------
-    # 3) Extrair e-mails do TOP 50
-    # ---------------------------
-    emails = extrair_emails(df_top50, coluna_preferida="EMAIL")
-    print(f"📧 E-mails únicos no TOP 50: {len(emails)}")
-    if not emails:
-        print("⚠️ Nenhum e-mail encontrado — encerrando.")
-        return
-
-    emails, filtros_stats = filtrar_emails_por_listas(emails)
     print(
-        "🧹 Filtros de lista:"
-        f" blacklist={filtros_stats['blacklist']}"
-        f" greenlist={filtros_stats['greenlist']}"
-        f" finais={filtros_stats['finais']}/{filtros_stats['originais']}"
+        "🧹 Fila de processamento:"
+        f" greenlist={len(greenlist)}"
+        f" blacklist={len(blacklist)}"
+        f" pulados_blacklist={len(emails_pulados_blacklist)}"
+        f" finais={len(emails)}/{len(greenlist)}"
     )
+    if emails_pulados_blacklist:
+        for email_pulado in emails_pulados_blacklist:
+            print(f"⏭️  Pulado por blacklist: {email_pulado}")
     if not emails:
-        print("⚠️ Nenhum e-mail restou após aplicar blacklist/greenlist — encerrando.")
+        print("⚠️ Nenhum e-mail restou na greenlist após aplicar blacklist — encerrando.")
         return
 
-    # Limita o lote a 2 e-mails para o teste
-    lote = emails[:2]
-    print(f"🧪 Rodando teste com {len(lote)} e-mails.")
+    lote = list(emails)
+    print(f"🧪 Rodando com {len(lote)} e-mails após filtros.")
 
     # ---------------------------
-    # 4) Logger desta execução
+    # 2) Logger desta execução
     # ---------------------------
     exec_id = new_exec_id()
     print(f"🧾 exec_id: {exec_id}")
+    resumo_path = summary_path(exec_id)
 
     # ---------------------------
-    # 5) Selenium: login e navegação até Serviço de TV
+    # 3) Selenium: login e navegação até Serviço de TV
     # ---------------------------
     driver = build_driver()
     try:
@@ -134,7 +95,7 @@ def run():
         print("📺 Serviço de TV aberto")
 
         # ---------------------------
-        # 6) Loop principal (2 e-mails)
+        # 4) Loop principal
         # ---------------------------
         for idx, email in enumerate(lote, start=1):
             print(f"\n▶️  [{idx}/{len(lote)}] Email: {email}")
@@ -191,9 +152,13 @@ def run():
                         dt_desativ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         print(f"   SUCCESS: WATCH desativado em {dt_desativ}")
                         append_log(exec_id, email, "SUCCESS_OK_DESATIVADO", desativado_em=dt_desativ, observacao=driver.current_url)
+                        if remove_email_from_greenlist(email):
+                            print(f"   🗑️  Removido da greenlist: {email}")
                     else:
                         print("   INFO: sem contrato WATCH ativo")
                         append_log(exec_id, email, "INFO_SEM_WATCH_ATIVO", desativado_em="", observacao=driver.current_url)
+                        if remove_email_from_greenlist(email):
+                            print(f"   🗑️  Removido da greenlist: {email}")
 
                     sucesso = True
                     break  # sucesso na tentativa atual — sai do while
@@ -211,7 +176,16 @@ def run():
             if FULL_REOPEN_BETWEEN_EMAILS:
                 reabrir_servico_de_tv(driver, mode=SERVICO_TV_REOPEN_MODE)
 
-        print("\n✅ Lote concluído. Veja o CSV e o resumo em data/output/.")
+        print("\n✅ Lote concluído.")
+        print(f"📝 Resumo salvo em: {resumo_path}")
+        try:
+            with open(resumo_path, "r", encoding="utf-8") as f:
+                resumo = f.read().strip()
+            print("\n===== LOG FINAL =====")
+            print(resumo or "(sem linhas no resumo)")
+            print("=====================")
+        except Exception as e:
+            print(f"⚠️ Não foi possível abrir o resumo final: {type(e).__name__}: {e}")
         input("Pressione ENTER para finalizar...")
 
     finally:

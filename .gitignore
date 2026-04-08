@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 .env
+greenlist.txt
+blacklist.txt
+*.log
 
 data/output/
 

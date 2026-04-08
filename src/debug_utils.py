@@ -2,6 +2,7 @@
 # Comentário: helpers para gerar artefatos de debug (screenshot e HTML) em data/output/.
 
 import os
+import json
 from datetime import datetime
 
 from .config import OUTPUT_DIR
@@ -26,3 +27,13 @@ def dump_page_artifacts(driver, prefix="page"):
     except Exception:
         pass
     print(f"🧩 Artefatos salvos para debug: {png} / {html}")
+
+
+def dump_json_artifact(data, prefix="debug"):
+    """Salva um artefato JSON em data/output/ e retorna o caminho."""
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    path = os.path.join(OUTPUT_DIR, f"{prefix}_{_ts()}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print(f"🧾 JSON salvo para debug: {path}")
+    return path

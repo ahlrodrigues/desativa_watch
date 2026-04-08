@@ -379,16 +379,18 @@ def clicar_resultado_por_email(driver, email: str, retries: int = 3) -> None:
         # 1) percorre linhas da tabela procurando a que contém o e-mail
         try:
             trs = _safe_find(driver, *SEL_TABELA_LINHAS)
+            encontrou_linha_email = False
             for tr in trs:
                 if not _linha_contem_email(tr, email_low):
                     continue
+                encontrou_linha_email = True
 
                 # (1.a) clica âncora válida na linha
                 try:
                     a = tr.find_element(By.XPATH, ".//a[contains(@href,'/admin/cliente/')]")
                     href = a.get_attribute("href") or ""
                     if _is_cliente_href(href) and a.is_displayed():
-                        _click(driver, a); return
+                        driver.get(href); return
                 except Exception as e:
                     last_exc = e
 
@@ -427,8 +429,15 @@ def clicar_resultado_por_email(driver, email: str, retries: int = 3) -> None:
 
                 # achamos a linha mas não conseguimos abrir — continuar fallbacks globais
                 break
+            if trs and not encontrou_linha_email:
+                raise TimeoutException(
+                    f"Nenhuma linha do resultado contém o e-mail consultado: {email}"
+                )
         except StaleElementReferenceException as e:
             last_exc = e
+        except TimeoutException as e:
+            last_exc = e
+            break
 
         # 2) qualquer âncora válida no DOM
         try:
@@ -437,7 +446,7 @@ def clicar_resultado_por_email(driver, email: str, retries: int = 3) -> None:
                 try:
                     href = a.get_attribute("href") or ""
                     if _is_cliente_href(href) and a.is_displayed():
-                        _click(driver, a); return
+                        driver.get(href); return
                 except StaleElementReferenceException as e:
                     last_exc = e; continue
                 except Exception as e:
@@ -461,12 +470,16 @@ def entrar_em_modo_edicao_no_cliente(driver, timeout: int = 20) -> None:
     """
     Dentro da página do cliente, tenta abrir /edit/ (com fallbacks).
     """
+    if "/admin/cliente/" in (driver.current_url or "") and "/edit/" in (driver.current_url or ""):
+        return
+
     try:
-        el = WebDriverWait(driver, timeout).until(EC.element_to_be_clickable(SEL_LINK_EDITAR))
+        el = WebDriverWait(driver, min(timeout, 5)).until(EC.element_to_be_clickable(SEL_LINK_EDITAR))
         try:
             el.click()
         except WebDriverException:
             driver.execute_script("arguments[0].click();", el)
+        WebDriverWait(driver, min(timeout, 6)).until(lambda d: "/edit/" in (d.current_url or ""))
         return
     except TimeoutException:
         pass
@@ -479,11 +492,12 @@ def entrar_em_modo_edicao_no_cliente(driver, timeout: int = 20) -> None:
     ]
     for by, sel in FALLBACKS:
         try:
-            el = WebDriverWait(driver, timeout).until(EC.element_to_be_clickable((by, sel)))
+            el = WebDriverWait(driver, min(timeout, 4)).until(EC.element_to_be_clickable((by, sel)))
             try:
                 el.click()
             except WebDriverException:
                 driver.execute_script("arguments[0].click();", el)
+            WebDriverWait(driver, min(timeout, 6)).until(lambda d: "/edit/" in (d.current_url or ""))
             return
         except TimeoutException:
             continue

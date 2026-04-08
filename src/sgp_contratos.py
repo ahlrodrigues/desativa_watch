@@ -101,21 +101,29 @@ def _cliente_id_da_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 def abrir_aba_contratos(driver):
+    if "/contratos/" in (driver.current_url or ""):
+        for locator in LOC_PAINEL_CONTRATOS:
+            try:
+                WebDriverWait(driver, 4).until(EC.visibility_of_element_located(locator))
+                return
+            except Exception:
+                continue
+
     cliente_id = _cliente_id_da_url(driver.current_url or "")
     if cliente_id:
         url_contratos = urljoin(driver.current_url, f"/admin/cliente/{cliente_id}/contratos/")
         driver.get(url_contratos)
-        WebDriverWait(driver, 12).until(lambda d: "/contratos/" in (d.current_url or ""))
+        WebDriverWait(driver, 6).until(lambda d: "/contratos/" in (d.current_url or ""))
         for locator in LOC_PAINEL_CONTRATOS:
             try:
-                WebDriverWait(driver, 12).until(EC.visibility_of_element_located(locator))
+                WebDriverWait(driver, 6).until(EC.visibility_of_element_located(locator))
                 return
             except Exception:
                 continue
-    _wait_any(driver, LOC_TAB_CONTRATOS, timeout=20, click=True)
+    _wait_any(driver, LOC_TAB_CONTRATOS, timeout=8, click=True)
     for locator in LOC_PAINEL_CONTRATOS:
         try:
-            WebDriverWait(driver, 12).until(EC.visibility_of_element_located(locator))
+            WebDriverWait(driver, 6).until(EC.visibility_of_element_located(locator))
             return
         except Exception:
             continue
@@ -230,34 +238,38 @@ def verificar_e_desativar_watch(driver) -> bool:
             except WebDriverException:
                 driver.execute_script("arguments[0].click();", watch_link)
         WebDriverWait(driver, 20).until(EC.url_contains("/admin/servicos/tv/"))
-        if any(driver.find_elements(by, sel) for by, sel in LOC_STATUS_INATIVO_SERVICO):
-            return False
+    servico_inativo = any(driver.find_elements(by, sel) for by, sel in LOC_STATUS_INATIVO_SERVICO)
+    if not servico_inativo:
         _wait_any(driver, LOC_STATUS_ATIVO_SERVICO, timeout=20, click=False)
-    limpar_gateway_id_e_smartcard(driver)
 
-    btn = _wait_any(driver, LOC_BTN_DESATIVAR, timeout=20, click=False)
-    deact_href = btn.get_attribute("href") or ""
-    if deact_href:
-        driver.get(deact_href)
-    else:
-        try:
-            btn.click()
-        except WebDriverException:
-            driver.execute_script("arguments[0].click();", btn)
-    WebDriverWait(driver, 20).until(
-        lambda d: any(
-            d.find_elements(by, sel) for by, sel in LOC_STATUS_DESATIVAR_CONFIRM
-        ) or "serviço desativado com sucesso" in (d.page_source or "").lower() or any(
-            d.find_elements(by, sel) for by, sel in LOC_STATUS_ATIVO_SERVICO
+    desativou_agora = False
+    if not servico_inativo:
+        btn = _wait_any(driver, LOC_BTN_DESATIVAR, timeout=20, click=False)
+        deact_href = btn.get_attribute("href") or ""
+        if deact_href:
+            driver.get(deact_href)
+        else:
+            try:
+                btn.click()
+            except WebDriverException:
+                driver.execute_script("arguments[0].click();", btn)
+        WebDriverWait(driver, 20).until(
+            lambda d: any(
+                d.find_elements(by, sel) for by, sel in LOC_STATUS_DESATIVAR_CONFIRM
+            ) or "serviço desativado com sucesso" in (d.page_source or "").lower() or any(
+                d.find_elements(by, sel) for by, sel in LOC_STATUS_ATIVO_SERVICO
+            )
         )
-    )
-    page_low = (driver.page_source or "").lower()
-    confirmed = (
-        "serviço desativado com sucesso" in page_low
-        or "status: <span class=\"tbold\"> inativo" in page_low
-        or "situação: <strong>inativo" in page_low
-        or "ativar</a>" in page_low
-    )
-    if not confirmed:
-        raise TimeoutException("A página não confirmou a mudança do serviço após desativar.")
-    return True
+        page_low = (driver.page_source or "").lower()
+        confirmed = (
+            "serviço desativado com sucesso" in page_low
+            or "status: <span class=\"tbold\"> inativo" in page_low
+            or "situação: <strong>inativo" in page_low
+            or "ativar</a>" in page_low
+        )
+        if not confirmed:
+            raise TimeoutException("A página não confirmou a mudança do serviço após desativar.")
+        desativou_agora = True
+
+    limpar_gateway_id_e_smartcard(driver)
+    return desativou_agora

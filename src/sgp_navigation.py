@@ -7,12 +7,14 @@
 
 from __future__ import annotations
 from typing import List, Tuple, Optional
+from urllib.parse import urljoin
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchFrameException
+from .config import SGP_BASE_URL
 
 # =========================
 # Localizadores tolerantes
@@ -34,6 +36,8 @@ LOC_CLIENTES_CANDIDATES: List[Tuple[str, str]] = [
 LOC_CONSULTAR_V2: List[Tuple[str, str]] = [
     (By.XPATH, '//a[normalize-space()="Consultar V2"]'),
     (By.XPATH, '//a[contains(normalize-space(),"Consultar V2")]'),
+    (By.CSS_SELECTOR, 'a[href="/admin/cliente/search/"]'),
+    (By.CSS_SELECTOR, 'a[href*="/admin/cliente/search/"]'),
 ]
 
 # "Serviço de TV" (com e sem acento)
@@ -91,6 +95,17 @@ def _open_submenu_js(driver, el_clientes):
           const ul = li.querySelector('ul');
           if (ul) { ul.style.display = 'block'; ul.style.visibility = 'visible'; }
         """, li)
+
+
+def _abrir_consultar_v2_direto(driver, timeout=10):
+    """
+    Fallback robusto: navega direto para a rota conhecida de 'Consultar V2'.
+    """
+    alvo = urljoin(SGP_BASE_URL + "/", "admin/cliente/search/")
+    driver.switch_to.default_content()
+    driver.get(alvo)
+    WebDriverWait(driver, timeout).until(lambda d: "/admin/cliente/search/" in (d.current_url or ""))
+    _log(f"'Consultar V2' aberto por URL direta: {alvo}")
 
 def _ensure_menu_context(driver) -> Optional[int]:
     """
@@ -186,12 +201,18 @@ def ir_para_consultar_v2(driver, timeout=20):
         raise TimeoutException("Não foi possível abrir o submenu de 'Clientes'.")
 
     # 3) Clicar 'Consultar V2'
-    el_consultar = _find_first_clickable(driver, LOC_CONSULTAR_V2, timeout_each=timeout//2)
     try:
-        el_consultar.click()
-    except WebDriverException:
-        _js_click(driver, el_consultar)
-    _log("'Consultar V2' clicado.")
+        el_consultar = _find_first_clickable(driver, LOC_CONSULTAR_V2, timeout_each=timeout//2)
+        try:
+            el_consultar.click()
+        except WebDriverException:
+            _js_click(driver, el_consultar)
+        _log("'Consultar V2' clicado.")
+    except Exception:
+        _log("Link visível de 'Consultar V2' não apareceu; tentando URL direta.")
+        _abrir_consultar_v2_direto(driver, timeout=timeout)
+        driver.switch_to.default_content()
+        return
 
     # 4) Após clique, voltar ao top-level (se vínhamos de iframe)
     driver.switch_to.default_content()
