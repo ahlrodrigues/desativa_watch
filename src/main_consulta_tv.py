@@ -11,6 +11,8 @@
 #  - reabre "Serviço de TV" entre e-mails e em caso de retorno em branco
 
 from datetime import datetime
+import os
+import sys
 
 # === Config / arquivos / dados ===
 from .config import (
@@ -99,6 +101,7 @@ def run():
         # ---------------------------
         for idx, email in enumerate(lote, start=1):
             print(f"\n▶️  [{idx}/{len(lote)}] Email: {email}")
+            email_finalizado = False
             try:
                 # --- Retry quando resultado vier em branco ---
                 attempt = 0
@@ -131,6 +134,7 @@ def run():
                                 desativado_em="",
                                 observacao="Sem links de cliente / e-mail no HTML após consulta",
                             )
+                            email_finalizado = True
                             # Reabre para garantir estado limpo para o próximo e-mail
                             reabrir_servico_de_tv(driver, mode=SERVICO_TV_REOPEN_MODE)
                             break  # sai do while, segue para o próximo e-mail
@@ -152,14 +156,11 @@ def run():
                         dt_desativ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         print(f"   SUCCESS: WATCH desativado em {dt_desativ}")
                         append_log(exec_id, email, "SUCCESS_OK_DESATIVADO", desativado_em=dt_desativ, observacao=driver.current_url)
-                        if remove_email_from_greenlist(email):
-                            print(f"   🗑️  Removido da greenlist: {email}")
                     else:
                         print("   INFO: sem contrato WATCH ativo")
                         append_log(exec_id, email, "INFO_SEM_WATCH_ATIVO", desativado_em="", observacao=driver.current_url)
-                        if remove_email_from_greenlist(email):
-                            print(f"   🗑️  Removido da greenlist: {email}")
 
+                    email_finalizado = True
                     sucesso = True
                     break  # sucesso na tentativa atual — sai do while
 
@@ -171,6 +172,10 @@ def run():
                 msg = f"{type(e).__name__}: {e}"
                 print(f"   FAIL: {msg}")
                 append_log(exec_id, email, "FAIL_ERRO", desativado_em="", observacao=msg)
+                email_finalizado = True
+
+            if email_finalizado and remove_email_from_greenlist(email):
+                print(f"   🗑️  Removido da greenlist: {email}")
 
             # --- Reabrir do zero entre e-mails (evita estado quebrado) ---
             if FULL_REOPEN_BETWEEN_EMAILS:
@@ -186,7 +191,9 @@ def run():
             print("=====================")
         except Exception as e:
             print(f"⚠️ Não foi possível abrir o resumo final: {type(e).__name__}: {e}")
-        input("Pressione ENTER para finalizar...")
+        pause_disabled = os.getenv("DESATIVA_WATCH_NO_PAUSE", "").strip().lower() in {"1", "true", "yes", "on"}
+        if not pause_disabled and sys.stdin.isatty():
+            input("Pressione ENTER para finalizar...")
 
     finally:
         driver.quit()

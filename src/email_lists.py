@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from .config import BLACKLIST_PATH, GREENLIST_PATH
 
 
@@ -34,14 +36,57 @@ def load_greenlist() -> list[str]:
     return _read_email_list(GREENLIST_PATH)
 
 
-def remove_email_from_greenlist(email: str) -> bool:
+def _write_email_list(path: str, emails: list[str]) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    header = [
+        "# E-mails liberados para processamento.\n"
+        if path == GREENLIST_PATH
+        else "# E-mails que o script nunca deve buscar ou alterar.\n",
+        "# Se este arquivo tiver e-mails, o script só processa os que estiverem aqui.\n"
+        if path == GREENLIST_PATH
+        else "# Uma linha por e-mail.\n",
+    ]
+    if path == GREENLIST_PATH:
+        header.append("# Uma linha por e-mail.\n")
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(header)
+        f.write("\n")
+        for email in emails:
+            f.write(f"{_normalize_email(email)}\n")
+
+
+def save_blacklist(emails: list[str]) -> None:
+    deduped = []
+    seen: set[str] = set()
+    for email in emails:
+        email_norm = _normalize_email(email)
+        if not email_norm or email_norm in seen:
+            continue
+        deduped.append(email_norm)
+        seen.add(email_norm)
+    _write_email_list(BLACKLIST_PATH, deduped)
+
+
+def save_greenlist(emails: list[str]) -> None:
+    deduped = []
+    seen: set[str] = set()
+    for email in emails:
+        email_norm = _normalize_email(email)
+        if not email_norm or email_norm in seen:
+            continue
+        deduped.append(email_norm)
+        seen.add(email_norm)
+    _write_email_list(GREENLIST_PATH, deduped)
+
+
+def _remove_email_from_list(path: str, email: str) -> bool:
     """
-    Remove um e-mail da greenlist preservando comentários e linhas em branco.
+    Remove um e-mail de uma lista preservando comentários e linhas em branco.
     Retorna True se removeu ao menos uma ocorrência.
     """
     email_norm = _normalize_email(email)
     try:
-        with open(GREENLIST_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             linhas = f.readlines()
     except FileNotFoundError:
         return False
@@ -56,9 +101,41 @@ def remove_email_from_greenlist(email: str) -> bool:
         novas_linhas.append(linha)
 
     if removeu:
-        with open(GREENLIST_PATH, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.writelines(novas_linhas)
     return removeu
+
+
+def remove_email_from_greenlist(email: str) -> bool:
+    return _remove_email_from_list(GREENLIST_PATH, email)
+
+
+def remove_email_from_blacklist(email: str) -> bool:
+    return _remove_email_from_list(BLACKLIST_PATH, email)
+
+
+def add_email_to_greenlist(email: str) -> bool:
+    email_norm = _normalize_email(email)
+    if not email_norm:
+        return False
+    emails = load_greenlist()
+    if email_norm in emails:
+        return False
+    emails.append(email_norm)
+    save_greenlist(emails)
+    return True
+
+
+def add_email_to_blacklist(email: str) -> bool:
+    email_norm = _normalize_email(email)
+    if not email_norm:
+        return False
+    emails = load_blacklist()
+    if email_norm in emails:
+        return False
+    emails.append(email_norm)
+    save_blacklist(emails)
+    return True
 
 
 def filtrar_emails_por_listas(emails: list[str]) -> tuple[list[str], dict]:

@@ -40,7 +40,7 @@ def init_log(exec_id: str) -> str:
     resumo = summary_path(exec_id)
     if not os.path.exists(resumo):
         with open(resumo, "w", encoding="utf-8") as f:
-            f.write("resultado | email | quando | detalhe\n")
+            f.write("resultado | email | quando\n")
     return path
 
 def append_log(exec_id: str, email: str, resultado: str, desativado_em: str = "", observacao: str = ""):
@@ -59,4 +59,4 @@ def append_log(exec_id: str, email: str, resultado: str, desativado_em: str = ""
         w = csv.DictWriter(f, fieldnames=HEADERS)
         w.writerow(row)
     with open(summary_path(exec_id), "a", encoding="utf-8") as f:
-        f.write(f"{resultado} | {email} | {row['quando']} | {detalhe or '-'}\n")
+        f.write(f"{resultado} | {email} | {row['quando']}\n")

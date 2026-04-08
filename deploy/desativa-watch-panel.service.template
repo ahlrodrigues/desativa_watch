@@ -1,0 +1,17 @@
+[Unit]
+Description=Painel Desativa Watch
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__WORKDIR__
+Environment=PANEL_HOST=__PANEL_HOST__
+Environment=PANEL_PORT=__PANEL_PORT__
+Environment=PYTHONUNBUFFERED=1
+ExecStart=__WORKDIR__/scripts/start-panel.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
