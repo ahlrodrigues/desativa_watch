@@ -194,6 +194,18 @@ PANEL_HTML = r"""<!doctype html>
       font: 0.92rem/1.5 "Cascadia Code", "Consolas", monospace;
       white-space: pre-wrap;
     }
+    .log-line {
+      display: block;
+    }
+    .log-line.error {
+      color: #ff8c7a;
+    }
+    .log-line.success {
+      color: #8fe3b8;
+    }
+    .log-line.warn {
+      color: #ffd38a;
+    }
     .message {
       margin-top: 12px;
       padding: 12px 14px;
@@ -376,8 +388,40 @@ PANEL_HTML = r"""<!doctype html>
       if (data.exit_code !== null) bits.push(`exit code: ${data.exit_code}`);
       meta.textContent = bits.join(' • ');
 
-      logBox.textContent = data.log_text || 'Aguardando execução...';
+      logBox.innerHTML = renderLogMarkup(data.log_text || 'Aguardando execução...');
       logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function classifyLogLine(line) {
+      const upper = String(line || '').toUpperCase();
+      if (upper.includes('FAIL') || upper.includes('ERROR') || upper.includes('TRACEBACK') || upper.includes('EXCEPTION') || line.includes('❌')) {
+        return 'error';
+      }
+      if (upper.includes('SUCCESS') || line.includes('✅')) {
+        return 'success';
+      }
+      if (upper.includes('WARN') || line.includes('⚠️')) {
+        return 'warn';
+      }
+      return '';
+    }
+
+    function renderLogMarkup(text) {
+      return String(text || '')
+        .split('\n')
+        .map((line) => {
+          const kind = classifyLogLine(line);
+          const className = kind ? `log-line ${kind}` : 'log-line';
+          return `<span class="${className}">${escapeHtml(line) || '&nbsp;'}</span>`;
+        })
+        .join('');
     }
 
     async function ensureAutoRun(greenCount) {
@@ -398,6 +442,7 @@ PANEL_HTML = r"""<!doctype html>
     async function refreshStatus() {
       const data = await api('/api/status');
       renderStatus(data);
+      await refreshLists();
       if (!data.running && pollHandle) {
         clearInterval(pollHandle);
         pollHandle = null;
@@ -469,12 +514,24 @@ class RunState:
 RUN_STATE = RunState()
 
 
+def _cleanup_old_panel_logs(current_run_id: str) -> None:
+    current_name = f"panel_console_{current_run_id}.log"
+    for path in Path(OUTPUT_DIR).glob("panel_console_*.log"):
+        if path.name == current_name:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def _start_run() -> dict[str, Any]:
     with RUN_STATE.lock:
         if RUN_STATE.process is not None and RUN_STATE.process.poll() is None:
             return RUN_STATE.snapshot()
 
         run_id = _now_file()
+        _cleanup_old_panel_logs(run_id)
         console_log_path = os.path.join(OUTPUT_DIR, f"panel_console_{run_id}.log")
         Path(console_log_path).write_text("", encoding="utf-8")
         env = os.environ.copy()

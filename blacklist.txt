@@ -1,6 +1,5 @@
 # E-mails que o script nunca deve buscar ou alterar.
 # Uma linha por e-mail.
 
-thiago_carvalho09@outlook.com
 
 

@@ -4,6 +4,7 @@
 import os
 import csv
 from datetime import datetime
+from pathlib import Path
 
 from .config import OUTPUT_DIR
 
@@ -31,8 +32,26 @@ def summary_path(exec_id: str) -> str:
     ensure_dir(OUTPUT_DIR)
     return os.path.join(OUTPUT_DIR, f"desativa_watch_resumo_{exec_id}.log")
 
+
+def cleanup_old_logs(current_exec_id: str) -> None:
+    """Mantém apenas os logs da execução atual."""
+    ensure_dir(OUTPUT_DIR)
+    current_files = {
+        f"desativa_watch_log_{current_exec_id}.csv",
+        f"desativa_watch_resumo_{current_exec_id}.log",
+    }
+    for pattern in ("desativa_watch_log_*.csv", "desativa_watch_resumo_*.log"):
+        for path in Path(OUTPUT_DIR).glob(pattern):
+            if path.name in current_files:
+                continue
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
 def init_log(exec_id: str) -> str:
     """Cria o arquivo com cabeçalho se não existir."""
+    cleanup_old_logs(exec_id)
     path = log_path(exec_id)
     if not os.path.exists(path):
         with open(path, "w", newline="", encoding="utf-8") as f:
