@@ -13,6 +13,7 @@
 from datetime import datetime
 import os
 import sys
+from collections import Counter
 
 # === Config / arquivos / dados ===
 from .config import (
@@ -43,6 +44,7 @@ from .sgp_contratos import (
 
 # === Logger CSV ===
 from .log_utils import new_exec_id, append_log, summary_path
+from .telegram_notify import build_run_summary, send_telegram_message, telegram_enabled
 
 def run():
     """
@@ -74,6 +76,7 @@ def run():
 
     lote = list(emails)
     print(f"🧪 Rodando com {len(lote)} e-mails após filtros.")
+    result_counts: Counter[str] = Counter()
 
     # ---------------------------
     # 2) Logger desta execução
@@ -81,6 +84,14 @@ def run():
     exec_id = new_exec_id()
     print(f"🧾 exec_id: {exec_id}")
     resumo_path = summary_path(exec_id)
+    if telegram_enabled():
+        send_telegram_message(
+            "\n".join([
+                "Desativa Watch iniciado.",
+                f"Execução: {exec_id}",
+                f"Total na fila: {len(lote)}",
+            ])
+        )
 
     # ---------------------------
     # 3) Selenium: login e navegação até Serviço de TV
@@ -134,6 +145,7 @@ def run():
                                 desativado_em="",
                                 observacao="Sem links de cliente / e-mail no HTML após consulta",
                             )
+                            result_counts["FAIL_SEM_RESULTADO"] += 1
                             email_finalizado = True
                             # Reabre para garantir estado limpo para o próximo e-mail
                             reabrir_servico_de_tv(driver, mode=SERVICO_TV_REOPEN_MODE)
@@ -156,9 +168,11 @@ def run():
                         dt_desativ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         print(f"   SUCCESS: WATCH desativado em {dt_desativ}")
                         append_log(exec_id, email, "SUCCESS_OK_DESATIVADO", desativado_em=dt_desativ, observacao=driver.current_url)
+                        result_counts["SUCCESS_OK_DESATIVADO"] += 1
                     else:
                         print("   INFO: sem contrato WATCH ativo")
                         append_log(exec_id, email, "INFO_SEM_WATCH_ATIVO", desativado_em="", observacao=driver.current_url)
+                        result_counts["INFO_SEM_WATCH_ATIVO"] += 1
 
                     email_finalizado = True
                     sucesso = True
@@ -172,6 +186,7 @@ def run():
                 msg = f"{type(e).__name__}: {e}"
                 print(f"   FAIL: {msg}")
                 append_log(exec_id, email, "FAIL_ERRO", desativado_em="", observacao=msg)
+                result_counts["FAIL_ERRO"] += 1
                 email_finalizado = True
 
             if email_finalizado and remove_email_from_greenlist(email):
@@ -183,6 +198,8 @@ def run():
 
         print("\n✅ Lote concluído.")
         print(f"📝 Resumo salvo em: {resumo_path}")
+        if telegram_enabled():
+            send_telegram_message(build_run_summary(exec_id, len(lote), dict(result_counts)))
         try:
             with open(resumo_path, "r", encoding="utf-8") as f:
                 resumo = f.read().strip()
