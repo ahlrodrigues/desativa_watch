@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .env
+.codex
 greenlist.txt
 blacklist.txt
 *.log
